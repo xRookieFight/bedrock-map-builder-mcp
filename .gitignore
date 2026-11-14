@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+# local worlds, backups and server instances never go public
+data/
+worlds/
+backups/
+*.mcworld
+!test/fixtures/**
+.DS_Store
