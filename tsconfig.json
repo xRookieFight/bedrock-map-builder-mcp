@@ -13,5 +13,5 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "test-bds/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "test-bds/**/*.ts", "scripts/**/*.ts"]
 }
