@@ -59,7 +59,8 @@ export function digestSet(set: VoxelSet): string {
 export async function applyVoxels(backend: Backend, project: Project, set: VoxelSet, opt: ApplyOptions): Promise<ApplyReport> {
   const t0 = Date.now();
   const bounds = set.bounds();
-  const undo = (opt.undo ?? true) && backend.caps.read;
+  // readable worlds snapshot into the project folder, command only links fall back to in-memory structures
+  const undo = (opt.undo ?? true) && (backend.caps.read || backend.caps.snapshot);
   if (!bounds) {
     return { opId: "", label: opt.label, blocks: 0, placed: 0, tiles: 0, fills: 0, bounds: null, undoable: false, status: "done", errors: [], ms: 0 };
   }
@@ -82,7 +83,7 @@ export async function applyVoxels(backend: Backend, project: Project, set: Voxel
     const records: TileRecord[] = tiles.map((t, i) => ({
       i,
       box: t.set.bounds()!,
-      snap: undo ? `${id}_${i}` : undefined,
+      snap: undo ? (backend.caps.read ? `${id}_${i}` : `mem:mbm_u${id}_${i}`) : undefined,
       status: "pending",
     }));
     op = { id, at: new Date().toISOString(), label: opt.label, world: backend.worldId(), dim: opt.dim, blocks: set.size, undoable: undo, digest, tiles: records, status: "running" };
@@ -107,8 +108,11 @@ export async function applyVoxels(backend: Backend, project: Project, set: Voxel
       if (backend.caps.load) release = await backend.ensureLoaded(opt.dim, rec.box, `${op.id}_${i}`);
       // only snapshot a tile that hasn't been touched yet, a re-snapshot after a half fill would bake the half build into undo
       if (rec.snap && rec.status === "pending") {
-        const before = await backend.read(opt.dim, rec.box);
-        project.saveSnapshot(rec.snap, { dim: opt.dim, box: rec.box, palette: before.set.palette, runs: before.set.toRuns(rec.box) });
+        if (rec.snap.startsWith("mem:")) await backend.snapshot(opt.dim, rec.box, rec.snap.slice(4));
+        else {
+          const before = await backend.read(opt.dim, rec.box);
+          project.saveSnapshot(rec.snap, { dim: opt.dim, box: rec.box, palette: before.set.palette, runs: before.set.toRuns(rec.box) });
+        }
         project.tileSnapped(op.id, i);
       }
       const cuboids = tileSet.toCuboids();
@@ -230,9 +234,14 @@ export async function undoOp(backend: Backend, project: Project, opId: string, f
     let release: (() => Promise<void>) | undefined;
     try {
       if (backend.caps.load) release = await backend.ensureLoaded(op.dim, t.box, `${op.id}_u${t.i}`);
-      const snap = project.loadSnapshot(t.snap);
-      const r = await backend.paint(op.dim, snap.box, snap.palette, snap.runs);
-      if (r.errors.length) throw new Error(r.errors.join("; "));
+      if (t.snap.startsWith("mem:")) {
+        // in-memory structures are gone once the game closes the world, the error says so plainly
+        await backend.place(op.dim, t.snap.slice(4), t.box.min);
+      } else {
+        const snap = project.loadSnapshot(t.snap);
+        const r = await backend.paint(op.dim, snap.box, snap.palette, snap.runs);
+        if (r.errors.length) throw new Error(r.errors.join("; "));
+      }
       restored++;
     } catch (e) {
       errors.push(`tile ${t.i}: ${(e as Error).message}`);
@@ -241,7 +250,9 @@ export async function undoOp(backend: Backend, project: Project, opId: string, f
     }
   }
   if (!errors.length) {
-    for (const t of op.tiles) if (t.snap) project.deleteSnapshot(t.snap);
+    const mem = op.tiles.filter((t) => t.snap?.startsWith("mem:")).map((t) => t.snap!.slice(4));
+    if (mem.length) await backend.deleteStructures(mem).catch(() => 0);
+    for (const t of op.tiles) if (t.snap && !t.snap.startsWith("mem:")) project.deleteSnapshot(t.snap);
     project.endOp(op.id, "undone");
   }
   return { opId, restored, errors };

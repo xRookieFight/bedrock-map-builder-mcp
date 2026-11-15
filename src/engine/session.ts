@@ -96,6 +96,8 @@ export class Session {
   bdsVersion?: string;
   project: Project;
   private wsBackend?: Backend;
+  /** Which connection tools act on when both a BDS world and a /connect client are up. */
+  active: "bds" | "ws" = "bds";
 
   constructor() {
     this.project = new Project(process.env.MBM_PROJECT || "default");
@@ -117,7 +119,7 @@ export class Session {
   }
 
   requireBackend(): Backend {
-    const b = this.backend ?? this.wsBackend;
+    const b = this.active === "ws" ? this.wsBackend ?? this.backend : this.backend ?? this.wsBackend;
     if (!b) {
       throw new SessionError(
         "no world connected. Use world_create or world_import and then server_start, or ws_listen for a world open in the game",
@@ -128,7 +130,7 @@ export class Session {
 
   setWsBackend(b: Backend | undefined) {
     this.wsBackend = b;
-    if (b && !this.backend) this.world = b.worldId();
+    this.active = b ? "ws" : "bds";
   }
 
   private sources(): WorldSources {
@@ -257,6 +259,7 @@ export class Session {
     this.bdsVersion = ver;
     this.world = world;
     this.backend = new BdsBackend(server, INSTANCE, world);
+    this.active = "bds";
     // never leave our own structures in a map, they'd travel along with every export
     const purged = await this.backend.bridge<{ removed: number }>("purge", {}, 60_000).catch(() => ({ removed: 0 }));
     if (isNew) {

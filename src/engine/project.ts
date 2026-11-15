@@ -9,7 +9,7 @@ export interface TileRecord {
   i: number;
   /** Tight bounds of what this tile writes, also what the undo snapshot covers. */
   box: Box;
-  /** Snapshot file name under the project's snapshots folder. */
+  /** Snapshot file name under the project's snapshots folder, or mem:<structure> for command only links. */
   snap?: string;
   status: "pending" | "snapped" | "done" | "failed";
   placed?: number;
@@ -64,8 +64,10 @@ export interface ProjectMeta {
   created: string;
   /** Free form design decisions: style, palette rules, scale, whatever should survive between sessions. */
   decisions: string[];
-  palette: Record<string, string>;
+  palette: Record<string, string | Record<string, number>>;
   regions: Record<string, RegionNote>;
+  /** Markers from generators by op id: spawns, chests, checkpoints and so on. */
+  markers?: Record<string, { label: string; markers: { kind: string; name?: string; pos: { x: number; y: number; z: number } }[] }>;
   world?: string;
 }
 
