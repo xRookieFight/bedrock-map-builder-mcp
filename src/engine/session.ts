@@ -201,7 +201,10 @@ export class Session {
   async exportWorld(name: string, to: string | "source"): Promise<{ written: string; backup?: string }> {
     const src = this.worldPath(name);
     if (!existsSync(src)) throw new SessionError(`no managed world "${name}"`);
-    if (this.world === name && this.server) await this.stopServer();
+    if (this.world === name && this.server) {
+      await this.backend?.bridge("purge", {}, 60_000).catch(() => {});
+      await this.stopServer();
+    }
     const dest = to === "source" ? this.sources()[name]?.source : to;
     if (!dest) throw new SessionError(`world "${name}" was not imported from anywhere, give an explicit path`);
     const staging = join(dataDir(), "tmp", `export-${Date.now()}`);
@@ -254,6 +257,8 @@ export class Session {
     this.bdsVersion = ver;
     this.world = world;
     this.backend = new BdsBackend(server, INSTANCE, world);
+    // never leave our own structures in a map, they'd travel along with every export
+    const purged = await this.backend.bridge<{ removed: number }>("purge", {}, 60_000).catch(() => ({ removed: 0 }));
     if (isNew) {
       // a fresh build world shouldn't have mobs wandering through the scaffolding or the sun setting on it
       await this.backend.commands("overworld", [
@@ -265,7 +270,7 @@ export class Session {
     }
     this.project.meta.world = this.backend.worldId();
     this.project.saveMeta();
-    return { world, bdsVersion: ver, newWorld: isNew, port: s.serverPort ?? 19140, pid: server.pid };
+    return { world, bdsVersion: ver, newWorld: isNew, port: s.serverPort ?? 19140, pid: server.pid, purgedStructures: purged.removed };
   }
 
   async stopServer(): Promise<void> {

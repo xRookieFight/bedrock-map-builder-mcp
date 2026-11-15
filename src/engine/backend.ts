@@ -19,7 +19,7 @@ export interface HeightmapResult {
 export interface BackendCapabilities {
   /** Can read blocks back, needed for analysis, copy, export and verification. */
   read: boolean;
-  /** Can save and place structures, which is what undo is built on. */
+  /** Can save and place in-memory structures, used for fast copy and move. */
   snapshot: boolean;
   /** Can force chunks to load, without it edits only work near players. */
   load: boolean;

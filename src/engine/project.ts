@@ -1,12 +1,15 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { dataDir } from "../config.js";
+import { BlockSpec } from "../core/block.js";
 import { Box, Dimension } from "../core/geometry.js";
 
 export interface TileRecord {
   i: number;
   /** Tight bounds of what this tile writes, also what the undo snapshot covers. */
   box: Box;
+  /** Snapshot file name under the project's snapshots folder. */
   snap?: string;
   status: "pending" | "snapped" | "done" | "failed";
   placed?: number;
@@ -163,6 +166,26 @@ export class Project {
     return o;
   }
 
+  // undo snapshots live here, never inside the world, so an exported map carries no hidden copies
+
+  saveSnapshot(name: string, data: UndoSnapshot): void {
+    mkdirSync(join(this.dir, "snapshots"), { recursive: true });
+    const f = join(this.dir, "snapshots", `${safeName(name)}.json.gz`);
+    const tmp = `${f}.tmp-${process.pid}`;
+    writeFileSync(tmp, gzipSync(JSON.stringify(data)));
+    renameSync(tmp, f);
+  }
+
+  loadSnapshot(name: string): UndoSnapshot {
+    const f = join(this.dir, "snapshots", `${safeName(name)}.json.gz`);
+    if (!existsSync(f)) throw new ProjectError(`undo snapshot ${name} is missing from ${this.dir}/snapshots`);
+    return JSON.parse(gunzipSync(readFileSync(f)).toString("utf8"));
+  }
+
+  deleteSnapshot(name: string): void {
+    rmSync(join(this.dir, "snapshots", `${safeName(name)}.json.gz`), { force: true });
+  }
+
   // plans
 
   savePlan(p: Plan): void {
@@ -180,6 +203,20 @@ export class Project {
       .filter((f) => f.endsWith(".json"))
       .map((f) => JSON.parse(readFileSync(join(this.dir, "plans", f), "utf8")) as Plan);
   }
+}
+
+/** Prior state of one tile, enough to paint it back exactly (block entities like chest contents excluded). */
+export interface UndoSnapshot {
+  dim: Dimension;
+  box: Box;
+  palette: BlockSpec[];
+  /** RLE over y, z, x like the bridge's paint op. */
+  runs: string;
+}
+
+function safeName(n: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,120}$/.test(n)) throw new ProjectError(`bad snapshot name "${n}"`);
+  return n;
 }
 
 export function atomicWrite(path: string, data: string): void {

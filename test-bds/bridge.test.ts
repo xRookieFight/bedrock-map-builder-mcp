@@ -48,6 +48,9 @@ describe("BDS bridge", { skip: !bds && "MBM_BDS_DIR not set" }, () => {
     assert.equal(read.set.getBlock(5, -55, 5)?.states.weirdo_direction, 2);
     assert.equal(read.set.getBlock(4, -56, 4)?.name, "minecraft:stone_bricks");
 
+    const ids = (await b.bridge<{ ids: string[] }>("structures", {})).ids;
+    assert.deepEqual(ids.filter((i) => i.startsWith("mbm:")), [], "undo data must not be stored inside the world");
+
     const u = await undoOp(b, session.project, r.opId);
     assert.deepEqual(u.errors, []);
     const back = await readRegion(b, "overworld", { min: { x: 5, y: -55, z: 5 }, max: { x: 5, y: -55, z: 5 } });

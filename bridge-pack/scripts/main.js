@@ -274,7 +274,8 @@ const handlers = {
     const sm = world.structureManager;
     if (sm.get(a.name)) sm.delete(a.name);
     sm.createFromWorld(a.name, dim(a.dim), a.from, a.to, {
-      saveMode: a.memory ? StructureSaveMode.Memory : StructureSaveMode.World,
+      // memory only: world mode would write into the level db and ship with every exported map
+      saveMode: StructureSaveMode.Memory,
       includeEntities: !!a.entities,
       includeBlocks: true,
     });
@@ -305,6 +306,19 @@ const handlers = {
 
   structures() {
     return { ids: world.structureManager.getWorldStructureIds() };
+  },
+
+  // older builds of this bridge saved undo copies into the world itself, sweep those out
+  purge() {
+    const sm = world.structureManager;
+    let removed = 0;
+    for (const id of sm.getWorldStructureIds()) {
+      if (!id.startsWith("mbm:")) continue;
+      try {
+        if (sm.delete(id)) removed++;
+      } catch {}
+    }
+    return { removed };
   },
 
   command(a) {
